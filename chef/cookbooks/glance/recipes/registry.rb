@@ -34,6 +34,15 @@ template node[:glance][:registry][:config_file] do
   owner node[:glance][:user]
   group "root"
   mode 0644
+  variables(
+    :keystone_address => keystone_address,
+    :keystone_auth_token => keystone_token,
+    :keystone_service_port => keystone_service_port,
+    :keystone_service_user => keystone_service_user,
+    :keystone_service_password => keystone_service_password,
+    :keystone_service_tenant => keystone_service_tenant,
+    :keystone_admin_port => keystone_admin_port
+  )
 end
 
 template node[:glance][:registry][:paste_ini] do
@@ -53,13 +62,17 @@ template node[:glance][:registry][:paste_ini] do
 end
 
 bash "Set registry glance version control" do
+  user "glance"
+  group "glance"
   code "exit 0"
   notifies :run, "bash[Sync registry glance db]", :immediately
-  only_if "glance-manage version_control 0"
+  only_if "glance-manage version_control 0", :user => "glance", :group => "glance"
   action :run
 end
 
 bash "Sync registry glance db" do
+  user "glance"
+  group "glance"
   code "glance-manage db_sync"
   action :nothing
 end
