@@ -42,64 +42,86 @@ end
 if node[:glance][:api][:protocol] == 'https'
   if node[:glance][:ssl][:generate_certs]
     package "openssl"
+    ruby_block "generate_certs for glance" do
+      block do
+        unless ::File.exists? node[:glance][:ssl][:certfile] and ::File.exists? node[:glance][:ssl][:keyfile]
+          require "fileutils"
 
-    require "fileutils"
-    [:certfile, :keyfile, :ca_certs].each do |k|
-      dir = File.dirname(node[:glance][:ssl][k])
-      if File.exists?(dir)
-        FileUtils.chown_R node[:glance][:user], node[:glance][:group], dir
-      else
-        FileUtils.mkdir_p(dir) {|d| File.chown node[:glance][:user], node[:glance][:group], d}
-      end
-    end
+          Chef::Log.info("Generating SSL certificate for glance...")
 
-    # Some more ownership fixes:
-    conf_dir = File.dirname node[:glance][:ssl][:ca_certs]
-    FileUtils.chown "root", node[:glance][:group], conf_dir
-    FileUtils.chown "root", node[:glance][:group], File.expand_path("#{conf_dir}/..")  # /etc/glance/ssl
+          [:certfile, :keyfile].each do |k|
+            dir = File.dirname(node[:glance][:ssl][k])
+            FileUtils.mkdir_p(dir) unless File.exists?(dir)
+          end
 
-    # Generate private key
-    %x(openssl genrsa -out #{node[:glance][:ssl][:keyfile]} 4096)
-    if $?.exitstatus != 0
-      message = "SSL private key generation failed"
+          # Generate private key
+          %x(openssl genrsa -out #{node[:glance][:ssl][:keyfile]} 4096)
+          if $?.exitstatus != 0
+            message = "SSL private key generation failed"
+            Chef::Log.fatal(message)
+            raise message
+          end
+          FileUtils.chown "root", node[:glance][:group], node[:glance][:ssl][:keyfile]
+          FileUtils.chmod 0640, node[:glance][:ssl][:keyfile]
+
+          # Generate certificate signing requests (CSR)
+          conf_dir = File.dirname node[:glance][:ssl][:certfile]
+          ssl_csr_file = "#{conf_dir}/signing_key.csr"
+          ssl_subject = "\"/C=US/ST=Unset/L=Unset/O=Unset/CN=#{node[:fqdn]}\""
+          %x(openssl req -new -key #{node[:glance][:ssl][:keyfile]} -out #{ssl_csr_file} -subj #{ssl_subject})
+          if $?.exitstatus != 0
+            message = "SSL certificate signed requests generation failed"
+            Chef::Log.fatal(message)
+            raise message
+          end
+
+          # Generate self-signed certificate with above CSR
+          %x(openssl x509 -req -days 3650 -in #{ssl_csr_file} -signkey #{node[:glance][:ssl][:keyfile]} -out #{node[:glance][:ssl][:certfile]})
+          if $?.exitstatus != 0
+            message = "SSL self-signed certificate generation failed"
+            Chef::Log.fatal(message)
+            raise message
+          end
+
+          File.delete ssl_csr_file  # Nobody should even try to use this
+        end # unless files exist
+      end # block
+    end # ruby_block
+  else # if generate_certs
+    unless ::File.exists? node[:glance][:ssl][:certfile]
+      message = "Certificate \"#{node[:glance][:ssl][:certfile]}\" is not present."
       Chef::Log.fatal(message)
       raise message
     end
-    FileUtils.chown node[:glance][:user], node[:glance][:group], node[:glance][:ssl][:keyfile]
+    # we do not check for existence of keyfile, as the private key is allowed
+    # to be in the certfile
+  end # if generate_certs
 
-    # Generate certificate signing requests (CSR)
-    ssl_csr_file = "#{conf_dir}/signing_key.csr"
-    ssl_subject = "\"/C=US/ST=Unset/L=Unset/O=Unset/CN=#{node[:fqdn]}\""
-    %x(openssl req -new -key #{node[:glance][:ssl][:keyfile]} -out #{ssl_csr_file} -subj #{ssl_subject})
-    if $?.exitstatus != 0
-      message = "SSL certificate signed requests generation failed"
-      Chef::Log.fatal(message)
-      raise message
-    end
-
-    # Generate self-signed certificate with above CSR
-    %x(openssl x509 -req -days 3650 -in #{ssl_csr_file} -signkey #{node[:glance][:ssl][:keyfile]} -out #{node[:glance][:ssl][:certfile]})
-    if $?.exitstatus != 0
-      message = "SSL self-signed certificate generation failed"
-      Chef::Log.fatal(message)
-      raise message
-    end
-
-    File.delete ssl_csr_file  # Nobody should even try to use this
-  end
-
-  unless ::File.exists? node[:glance][:ssl][:certfile]
-    message = "Certificate \"#{node[:glance][:ssl][:certfile]}\" is not present."
-    Chef::Log.fatal(message)
-    raise message
-  end
-  # we do not check for existence of keyfile, as the private key is allowed to
-  # be in the certfile
   if node[:glance][:ssl][:cert_required] and !::File.exists? node[:glance][:ssl][:ca_certs]
     message = "Certificate CA \"#{node[:glance][:ssl][:ca_certs]}\" is not present."
     Chef::Log.fatal(message)
     raise message
   end
+end
+
+if node[:glance][:notifier_strategy] != "noop"
+  rabbitmq_env_filter = " AND rabbitmq_config_environment:rabbitmq-config-#{node[:glance][:rabbitmq_instance]}"
+  rabbits = search(:node, "roles:rabbitmq-server#{rabbitmq_env_filter}") || []
+  if rabbits.length > 0
+    rabbit = rabbits[0]
+    rabbit = node if rabbit.name == node.name
+  else
+    rabbit = node
+  end
+  rabbit_address = Chef::Recipe::Barclamp::Inventory.get_network_by_type(rabbit, "admin").address
+
+  rabbit_settings = {
+    :address => rabbit_address,
+    :port => rabbit[:rabbitmq][:port],
+    :user => rabbit[:rabbitmq][:user],
+    :password => rabbit[:rabbitmq][:password],
+    :vhost => rabbit[:rabbitmq][:vhost]
+  }
 end
 
 template node[:glance][:api][:config_file] do
@@ -114,7 +136,8 @@ template node[:glance][:api][:config_file] do
       :keystone_service_port => keystone_service_port,
       :keystone_service_user => keystone_service_user,
       :keystone_service_password => keystone_service_password,
-      :keystone_service_tenant => keystone_service_tenant
+      :keystone_service_tenant => keystone_service_tenant,
+      :rabbit_settings => rabbit_settings
   )
 end
 

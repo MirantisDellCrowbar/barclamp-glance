@@ -50,16 +50,23 @@
         "store_container": "glance",
         "store_create_container_on_put": true
       },
+      "rbd": {
+        "store_ceph_conf": "/etc/ceph/ceph.conf",
+        "store_user": "glance",
+        "store_pool": "images"
+      },
       "sql_idle_timeout": 3600,
       "use_keystone": true,
       "keystone_instance": "none",
       "service_user": "glance",
-      "database_instance": "none"
+      "database_instance": "none",
+      "rabbitmq_instance": "none"
     }
   },
   "deployment": {
     "glance": {
       "crowbar-revision": 0,
+      "schema-revision": 1,
       "element_states": {
         "glance-server": [ "readying", "ready", "applying" ]
       },

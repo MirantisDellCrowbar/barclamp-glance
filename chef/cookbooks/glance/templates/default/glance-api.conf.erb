@@ -161,17 +161,21 @@ registry_client_protocol = http
 # message queue), or noop (no notifications sent, the default)
 notifier_strategy = <%= node[:glance][:notifier_strategy] %>
 
+<% if @rabbit_settings -%>
 # Configuration options if sending notifications via rabbitmq (these are
 # the defaults)
-rabbit_host = localhost
-rabbit_port = 5672
+rabbit_host = <%= @rabbit_settings[:address] %>
+<% unless @rabbit_settings[:port].nil? -%>
+rabbit_port=<%= @rabbit_settings[:port] %>
+<% end -%>
 rabbit_use_ssl = false
-rabbit_userid = guest
-rabbit_password = guest
-rabbit_virtual_host = /
+rabbit_userid=<%= @rabbit_settings[:user] %>
+rabbit_password=<%= @rabbit_settings[:password] %>
+rabbit_virtual_host=<%= @rabbit_settings[:vhost] %>
 rabbit_notification_exchange = glance
 rabbit_notification_topic = notifications
 rabbit_durable_queues = False
+<% end -%>
 
 # Configuration options if sending notifications via Qpid (these are
 # the defaults)
@@ -308,13 +312,13 @@ s3_store_create_bucket_on_put = False
 # If using cephx authentication, this file should
 # include a reference to the right keyring
 # in a client.<USER> section
-rbd_store_ceph_conf = /etc/ceph/ceph.conf
+rbd_store_ceph_conf = <%= node[:glance][:rbd][:store_ceph_conf] %>
 
 # RADOS user to authenticate as (only applicable if using cephx)
-rbd_store_user = glance
+rbd_store_user = <%= node[:glance][:rbd][:store_user] %>
 
 # RADOS pool in which images are stored
-rbd_store_pool = images
+rbd_store_pool = <%= node[:glance][:rbd][:store_pool] %>
 
 # Images will be chunked into objects of this size (in megabytes).
 # For best performance, this should be a power of two
