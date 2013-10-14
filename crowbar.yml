@@ -86,4 +86,4 @@ extra_files:
   - http://cloud-images.ubuntu.com/releases/precise/release/ubuntu-12.04-server-cloudimg-amd64.tar.gz ami
 
 git_repo:
-  - glance https://github.com/openstack/glance.git 2013.2.b2
+  - glance https://github.com/openstack/glance.git 2013.2.b3
