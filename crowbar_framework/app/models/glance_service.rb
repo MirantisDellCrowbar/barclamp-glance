@@ -34,6 +34,9 @@ class GlanceService < ServiceObject
     if role.default_attributes[@bc_name]["use_gitrepo"]
       answer << { "barclamp" => "git", "inst" => role.default_attributes[@bc_name]["git_instance"] }
     end
+    if role.default_attributes[@bc_name]["default_store"] == "rbd"
+      answer << { "barclamp" => "ceph", "inst" => role.default_attributes[@bc_name]["ceph_instance"] }
+    end
     answer
   end
 
@@ -118,6 +121,23 @@ class GlanceService < ServiceObject
     end
     base["attributes"]["glance"]["service_password"] = '%012d' % rand(1e12)
 
+    base["attributes"]["glance"]["ceph_instance"] = ""
+    begin
+      cephService = CephService.new(@logger)
+      cephs = cephService.list_active[1]
+      @logger.debug("Found ceph instances: #{cephs}")
+      if cephs.empty?
+        # No actives, look for porposals
+        cephs = cephService.proposals[1]
+      end
+      unless cephs.empty?
+        base["attributes"][@bc_name]["ceph_instance"] = cephs[0]
+      else
+        @logger.info("Glance create_proposal: no ceph found")
+      end
+    rescue
+      @logger.info("Glance create_proposal: no ceph found")
+    end
     @logger.debug("Glance create_proposal: exiting")
     base
   end
@@ -131,6 +151,13 @@ class GlanceService < ServiceObject
         raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "git"))
       end
     end
+    if proposal["attributes"][@bc_name]["default_store"] == "rbd"
+      cephService = CephService.new(@logger)
+      cephs = cephService.list_active[1].to_a
+      if not cephs.include?proposal["attributes"][@bc_name]["ceph_instance"]
+        raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
+      end
+    end
   end
 
 
@@ -138,6 +165,12 @@ class GlanceService < ServiceObject
     @logger.debug("Glance apply_role_pre_chef_call: entering #{all_nodes.inspect}")
     return if all_nodes.empty?
 
+    # apply ceph-client role if storage backend is Rados
+    unless role.default_attributes[@bc_name]["ceph_instance"].empty?
+      role.run_list << "role[cinder-volume]"
+      role.run_list << "role[ceph-glance]"
+      role.save
+    end
     # Update images paths
     nodes = NodeObject.find("roles:provisioner-server")
     unless nodes.nil? or nodes.length < 1
