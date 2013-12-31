@@ -36,6 +36,7 @@ class GlanceService < ServiceObject
     end
     if role.default_attributes[@bc_name]["default_store"] == "rbd"
       answer << { "barclamp" => "ceph", "inst" => role.default_attributes["@bc_name"]["ceph_instance"] }
+    end
     answer
   end
 
