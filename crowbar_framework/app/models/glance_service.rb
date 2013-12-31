@@ -121,28 +121,27 @@ class GlanceService < ServiceObject
     end
     base["attributes"]["glance"]["service_password"] = '%012d' % rand(1e12)
 
-    if base["attributes"]["glance"]["default_store"] == "rbd"
-      base["attributes"]["glance"]["ceph_instance"] = ""
-      begin
-        cephService = CephService.new(@logger)
-        cephs = cephService.list_active[1]
-        if cephs.empty?
-          # No actives, look for porposals
-          cephs = cephService.proposals[1]
-        end
-        unless cephs.empty?
-          base["attributes"]["glance"]["ceph_instance"] = cephs[0]
-        else
-          @logger.info("Glance create_proposal: no ceph found")
-        end
-      rescue
+=begin
+    base["attributes"]["glance"]["ceph_instance"] = ""
+    begin
+      cephService = CephService.new(@logger)
+      cephs = cephService.list_active[1]
+      if cephs.empty?
+        # No actives, look for porposals
+        cephs = cephService.proposals[1]
+      end
+      unless cephs.empty?
+        base["attributes"]["glance"]["ceph_instance"] = cephs[0]
+      else
         @logger.info("Glance create_proposal: no ceph found")
       end
-      if base["attributes"]["glance"]["ceph_instance"] == ""
-        raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
-      end
+    rescue
+      @logger.info("Glance create_proposal: no ceph found")
     end
-
+    if base["attributes"]["glance"]["ceph_instance"] == ""
+      raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
+    end
+=end
     @logger.debug("Glance create_proposal: exiting")
     base
   end
