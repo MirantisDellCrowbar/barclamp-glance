@@ -142,6 +142,11 @@ class GlanceService < ServiceObject
       if base["attributes"][@bc_name]["ceph_instance"] == ""
         raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
       end
+    rescue
+      @logger.info("Glance create_proposal: no ceph found")
+    end
+    if base["attributes"]["glance"]["default_store"] == "rbd" && base["attributes"]["glance"]["ceph_instance"] == ""
+      raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
     end
 
     @logger.debug("Glance create_proposal: exiting")
@@ -157,7 +162,7 @@ class GlanceService < ServiceObject
         raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "git"))
       end
     end
-    if proposal["attributes"][@bc_name]["default_store"]
+    if proposal["attributes"][@bc_name]["default_store"] == "rbd"
       cephService = CephService.new(@logger)
       cephs = cephService.list_active[1].to_a
       if not cephs.include?proposal["attributes"][@bc_name]["ceph_instance"]
