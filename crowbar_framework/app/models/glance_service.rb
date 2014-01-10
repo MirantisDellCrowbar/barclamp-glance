@@ -167,7 +167,7 @@ class GlanceService < ServiceObject
 
     # apply ceph-client role if storage backend is Rados
     unless role.default_attributes[@bc_name]["ceph_instance"].empty?
-      role.run_list << "role[cinder-volume]"
+      role.run_list << "role[glance-server]"
       role.run_list << "role[ceph-glance]"
       role.save
     end
