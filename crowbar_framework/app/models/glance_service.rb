@@ -135,15 +135,8 @@ class GlanceService < ServiceObject
       else
         @logger.info("Glance create_proposal: no ceph found")
       end
-      if base["attributes"][@bc_name]["ceph_instance"] == ""
-        raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
-      end
     rescue
       @logger.info("Glance create_proposal: no ceph found")
-    end
-
-    if (base["attributes"]["glance"]["default_store"] == "rbd") and (base["attributes"]["glance"]["ceph_instance"] == "")
-      raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
     end
 
     @logger.debug("Glance create_proposal: exiting")
@@ -175,6 +168,7 @@ class GlanceService < ServiceObject
 
     # apply ceph-client role if storage backend is Rados
     unless role.default_attributes["glance"]["ceph_instance"].empty?
+      role.run_list << "role[glance-server]"
       role.run_list << "role[ceph-glance]"
       role.save
     end
