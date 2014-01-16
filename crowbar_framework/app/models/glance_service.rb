@@ -27,12 +27,12 @@ class GlanceService < ServiceObject
 
   def proposal_dependencies(role)
     answer = []
-    answer << { "barclamp" => "database", "inst" => role.default_attributes["glance"]["database_instance"] }
-    if role.default_attributes["glance"]["use_keystone"]
-      answer << { "barclamp" => "keystone", "inst" => role.default_attributes["glance"]["keystone_instance"] }
-    end
-    if role.default_attributes[@bc_name]["use_gitrepo"]
-      answer << { "barclamp" => "git", "inst" => role.default_attributes[@bc_name]["git_instance"] }
+    deps = ["database"]
+    deps << "keystone" if role.default_attributes[@bc_name]["use_keystone"]
+    deps << "git" if role.default_attributes[@bc_name]["use_gitrepo"]
+    deps << "ceph" if role.default_attributes[@bc_name]["default_store"] == "rbd"
+    deps.each do |dep|
+      answer << { "barclamp" => dep, "inst" => role.default_attributes[@bc_name]["#{dep}_instance"] }
     end
     answer
   end
@@ -49,74 +49,27 @@ class GlanceService < ServiceObject
       }
     end
 
-    base["attributes"][@bc_name]["git_instance"] = ""
-    begin
-      gitService = GitService.new(@logger)
-      gits = gitService.list_active[1]
-      if gits.empty?
-        # No actives, look for proposals
-        gits = gitService.proposals[1]
+    base["attributes"][@bc_name]["service_password"] = '%012d' % rand(1e12)
+
+    insts = ["database", "rabbitmq", "keystone", "git", "ceph"]
+    insts.each do |inst|
+      base["attributes"][@bc_name]["#{inst}_instance"] = ""
+      begin
+        instService = eval "#{inst.capitalize}Service.new(@logger)"
+        instes = instService.list_active[1]
+        if instes.empty?
+          # No actives, look for proposals
+          instes = instService.proposals[1]
+        end
+        base["attributes"][@bc_name]["#{inst}_instance"] = instes[0] unless instes.empty?
+      rescue
+        @logger.info("#{@bc_name} create_proposal: no #{inst} found")
       end
-      unless gits.empty?
-        base["attributes"][@bc_name]["git_instance"] = gits[0]
-      end
-    rescue
-      @logger.info("#{@bc_name} create_proposal: no git found")
     end
 
-    base["attributes"]["glance"]["database_instance"] = ""
-    begin
-      databaseService = DatabaseService.new(@logger)
-      dbs = databaseService.list_active[1]
-      if dbs.empty?
-        # No actives, look for proposals
-        dbs = databaseService.proposals[1]
-      end
-      unless dbs.empty?
-        base["attributes"]["glance"]["database_instance"] = dbs[0]
-      else
-        @logger.info("Glance create_proposal: no database found")
-      end
-    rescue
-      @logger.info("Glance create_proposal: no database found")
-    end
-
-    if base["attributes"]["glance"]["database_instance"] == ""
+    if base["attributes"][@bc_name]["database_instance"] == ""
       raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "database"))
     end
-
-    base["attributes"]["glance"]["rabbitmq_instance"] = ""
-    begin
-      rabbitmqService = RabbitmqService.new(@logger)
-      rabbitmqs = rabbitmqService.list_active[1]
-      if rabbitmqs.empty?
-        # No actives, look for proposals
-        rabbitmqs = rabbitmqService.proposals[1]
-      end
-      base["attributes"]["glance"]["rabbitmq_instance"] = rabbitmqs[0] unless rabbitmqs.empty?
-    rescue
-      @logger.info("Glance create_proposal: no rabbitmq found")
-    end
-
-    base["attributes"]["glance"]["keystone_instance"] = ""
-    begin
-      keystoneService = KeystoneService.new(@logger)
-      keystones = keystoneService.list_active[1]
-      if keystones.empty?
-        # No actives, look for proposals
-        keystones = keystoneService.proposals[1]
-      end
-      if keystones.empty?
-        base["attributes"]["glance"]["use_keystone"] = false
-      else
-        base["attributes"]["glance"]["keystone_instance"] = keystones[0]
-        base["attributes"]["glance"]["use_keystone"] = true
-      end
-    rescue
-      @logger.info("Glance create_proposal: no keystone found")
-      base["attributes"]["glance"]["use_keystone"] = false
-    end
-    base["attributes"]["glance"]["service_password"] = '%012d' % rand(1e12)
 
     @logger.debug("Glance create_proposal: exiting")
     base
@@ -129,6 +82,19 @@ class GlanceService < ServiceObject
       gits = gitService.list_active[1].to_a
       if not gits.include?proposal["attributes"][@bc_name]["git_instance"]
         raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "git"))
+      end
+    end
+
+    # require ceph instance if storage backend is Rados
+    if proposal["attributes"][@bc_name]["default_store"] == "rbd"
+      begin
+      cephService = CephService.new(@logger)
+      cephs = cephService.list_active[1].to_a
+      if not gits.include?proposal["attributes"][@bc_name]["ceph_instance"]
+        raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
+      end
+      rescue
+        raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
       end
     end
   end
@@ -158,6 +124,13 @@ class GlanceService < ServiceObject
       tnodes.each do |n|
         net_svc.allocate_ip "default", "public", "host", n
       end unless tnodes.nil?
+    end
+
+    # append ceph-glance role if ceph is set as default storage backend
+    if role.default_attributes[@bc_name]["default_store"] == "rbd"
+      role.run_list << "role[glance-server]"
+      role.run_list << "role[ceph-glance]"
+      role.save
     end
 
     @logger.debug("Glance apply_role_pre_chef_call: leaving")

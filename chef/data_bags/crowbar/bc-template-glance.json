@@ -30,6 +30,7 @@
       "image_cache_stall_timeout": 86400,
       "image_cache_grace_period": 3600,
       "image_cache_max_size": 10737418240,
+      "ceph_instance": "",
       "gitrepo": "http://github.com/openstack/glance.git",
       "git_instance": "",
       "git_refspec": "stable/grizzly",
