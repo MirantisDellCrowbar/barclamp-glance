@@ -90,7 +90,7 @@ class GlanceService < ServiceObject
       begin
       cephService = CephService.new(@logger)
       cephs = cephService.list_active[1].to_a
-      if not gits.include?proposal["attributes"][@bc_name]["ceph_instance"]
+      if not cephs.include?proposal["attributes"][@bc_name]["ceph_instance"]
         raise(I18n.t('model.service.dependency_missing', :name => @bc_name, :dependson => "ceph"))
       end
       rescue
