@@ -15,6 +15,14 @@ directory "#{node[:glance][:working_directory]}/raw_images" do
   action :create
 end
 
+directory "/var/cache/glance/" do
+   mode 00775
+   owner node[:glance][:user]
+   action :create
+   recursive true
+   not_if { node[:platform] == "suse" }
+end
+
 keystone_settings = GlanceHelper.keystone_settings(node)
 
 glance_args = "--os-username #{keystone_settings["admin_user"]}"
